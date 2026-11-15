@@ -28,6 +28,16 @@ initRooms();
 expireStaleApprovals();
 
 const app = new Hono();
+// Local email sign-in must never become a LAN service or accept cross-site writes.
+app.use('/*', async (c, next) => {
+  if (env.desktop === 'none') {
+    const host = c.req.header('host') ?? '';
+    if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) return c.json({ error: 'Local access only' }, 403);
+    const origin = c.req.header('origin');
+    if (origin && origin !== `http://${host}`) return c.json({ error: 'Cross-origin access denied' }, 403);
+  }
+  return next();
+});
 app.get('/api/health', (c) => c.json({ ok: true, engine: 'hermes' }));
 // The app's tools for the agent engines (MCP).
 app.route('/mcp', mcpApi);
@@ -43,7 +53,7 @@ if (fs.existsSync(webDist)) {
   app.get('*', (c) => c.html(fs.readFileSync(path.join(webDist, 'index.html'), 'utf8')));
 }
 
-const server = serve({ fetch: app.fetch, port: env.port }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
+const server = serve({ fetch: app.fetch, port: env.port, hostname: env.hostname }, (info) => console.log(`[grokbot] server on http://localhost:${info.port}`));
 attachVncRelay(server as unknown as Server);
 // GROKBOT_NO_SCHEDULER=1 for extra dev/test servers sharing a database copy, so routines and triggers don't fire twice.
 if (process.env.GROKBOT_NO_SCHEDULER !== '1') {

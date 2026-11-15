@@ -46,6 +46,7 @@ function botByName(userId: string, name: string) {
 
 /** Live X research through xAI's search tool. Returns the answer text followed by the posts it cites. */
 async function xSearch(a: any): Promise<string> {
+  if (!env.xaiKey) throw new Error('X research is disabled. Configure XAI_API_KEY to enable it.');
   const clean = (v: unknown) => (Array.isArray(v) ? v.map((h) => String(h).replace(/^@/, '').trim()).filter(Boolean).slice(0, 10) : []);
   const tool: Record<string, unknown> = { type: 'x_search' };
   const only = clean(a.handles);

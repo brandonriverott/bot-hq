@@ -15,6 +15,7 @@ import { TasksView } from './components/config/TasksView';
 import { useConfigUI } from './configStore';
 
 function Shell() {
+  const capabilities = useStore((s) => s.capabilities);
   const detailsOpen = useStore((s) => s.detailsOpen);
   const modal = useStore((s) => s.modal);
   const viewerOpen = useStore((s) => s.viewerOpen);
@@ -57,13 +58,14 @@ function Shell() {
   return (
     <div className={`app${collapsed ? ' is-sidebar-collapsed' : ''}${detailsOpen && hasBot && view === 'chat' ? ' has-details' : ''}`}>
       <Sidebar />
+      {capabilities?.desktop === false && <div role="status" style={{ position: 'fixed', bottom: 8, left: 8, zIndex: 100, maxWidth: 240, padding: 10, borderRadius: 8, background: '#f3f3f3', color: '#333', fontSize: 12 }}>Local mode: one Hermes agent. Desktop screens are off.{!capabilities.apps && ' Connected apps are off.'}{!capabilities.voice && ' Voice and X research are off.'}</div>}
       {view === 'tasks' ? <TasksView /> : <ChatView />}
       {detailsOpen && hasBot && view === 'chat' && <DetailsPanel />}
       {modal === 'create' && <CreateBotModal />}
       {modal === 'group' && <CreateGroupModal />}
       {modal === 'search' && <SearchModal />}
       {modal === 'apps' && <ConnectAppsModal />}
-      {viewerOpen && <ComputerViewer />}
+      {viewerOpen && capabilities?.desktop !== false && <ComputerViewer />}
       <ConfigLayer />
     </div>
   );

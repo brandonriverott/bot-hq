@@ -4,7 +4,18 @@ import { db } from './db.js';
 import { env } from './env.js';
 import type { Toolkit } from './types.js';
 
-export const composio = new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider() });
+const createClient = () => new Composio({ apiKey: env.composioKey, provider: new OpenAIResponsesProvider() });
+type Client = ReturnType<typeof createClient>;
+let client: Client | undefined;
+// Construct only when configured and used; never fall back to another credential.
+export const composio = new Proxy({} as Client, {
+  get(_target, key) {
+    if (!env.composioKey) throw new Error('Connected apps are disabled. Configure COMPOSIO_API_KEY to enable them.');
+    client ??= createClient();
+    const value = Reflect.get(client, key);
+    return typeof value === 'function' ? value.bind(client) : value;
+  },
+});
 
 const REST = 'https://backend.composio.dev/api/v3.1';
 async function rest<T = any>(path: string): Promise<T> {
@@ -19,6 +30,7 @@ type CatalogItem = Omit<Toolkit, 'connected'>;
 let catalogCache: { at: number; items: CatalogItem[] } | null = null;
 
 export async function catalog(): Promise<CatalogItem[]> {
+  if (!env.composioKey) return [];
   if (catalogCache && Date.now() - catalogCache.at < 3600_000) return catalogCache.items;
   const items: CatalogItem[] = [];
   let cursor: string | undefined;
@@ -49,12 +61,14 @@ export async function toolkitInfo(slug: string): Promise<CatalogItem | undefined
 // ---------- per-user connections ----------
 
 export async function connectedToolkits(userId: string): Promise<Set<string>> {
+  if (!env.composioKey) return new Set();
   const r = await composio.connectedAccounts.list({ userIds: [userId], statuses: ['ACTIVE'] } as any);
   const items: any[] = (r as any).items ?? [];
   return new Set(items.map((i) => i.toolkit?.slug ?? i.toolkitSlug).filter(Boolean));
 }
 
 export async function connectionsDetail(userId: string) {
+  if (!env.composioKey) return [];
   const r = await composio.connectedAccounts.list({ userIds: [userId] } as any);
   return ((r as any).items ?? []).map((i: any) => ({ id: i.id, toolkit: i.toolkit?.slug ?? i.toolkitSlug, status: i.status }));
 }
@@ -95,6 +109,7 @@ export async function startConnect(userId: string, toolkit: string, callbackUrl:
 
 /** OpenAI-Responses-format function tools for this user's Composio session (meta tools). */
 export async function composioTools(userId: string): Promise<any[]> {
+  if (!env.composioKey) return [];
   try {
     const session = await sessionFor(userId);
     const tools = await session.tools();

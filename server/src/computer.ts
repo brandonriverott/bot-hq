@@ -19,6 +19,7 @@ export const MAX_SCREENS = 4;
 export interface BotScreen { computerId: string; screenId: string; width?: number; height?: number }
 
 function computerId(): string {
+  if (env.desktop === 'none') throw new Error('Desktops are disabled in local mode.');
   if (!env.orgoComputerId) throw new Error('ORGO_COMPUTER_ID is not set, so there is no computer for the bots to use.');
   return env.orgoComputerId;
 }
@@ -39,6 +40,7 @@ function setStatus(userId: string, status: ComputerState['status'], error: strin
 }
 
 export function computerState(userId: string): ComputerState {
+  if (env.desktop === 'none') return { status: 'absent', orgoId: null, error: 'Desktop disabled. Chat is available through a configured Hermes gateway.', screens: [], maxScreens: 0 };
   const r = rowFor(userId);
   const screens = (db.prepare('SELECT bot_id, screen_id, width, height FROM screens WHERE user_id=?').all(userId) as any[]).map((s) => ({
     botId: s.bot_id as string,
@@ -213,6 +215,7 @@ export function cdpUrlFor(botId: string, screenId: string): string {
  * answers. Without this a bot's first turn finds no browser and goes off to start one of its own.
  */
 export async function screenForWork(userId: string, botId: string): Promise<void> {
+  if (env.desktop === 'none') return;
   if (!env.orgoComputerId) return;
   if (!managesChrome(botId)) {
     // It brings its own browser, so nothing it needs depends on the dressing: don't make it wait.

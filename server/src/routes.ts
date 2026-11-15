@@ -37,7 +37,7 @@ const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE
 
 function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
   // Every bot needs a screen of its own on the one shared computer.
-  if (agentCount() >= env.maxBots) throw new UserError(`The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
+  if (agentCount() >= env.maxBots) throw new UserError(env.desktop === 'none' ? 'Local mode supports one existing Hermes agent. Additional bots need an isolated desktop backend.' : `The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
   const id = newId('bot');
   const shape = SHAPES.includes(b.avatarShape as AvatarShape) ? b.avatarShape : hashPick(id, SHAPES.slice(0, 13));
   const color = COLORS.includes(b.avatarColor as AvatarColor) ? b.avatarColor : hashPick(id, COLORS.filter((c) => c !== 'black'));
@@ -64,10 +64,11 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
 
 api.get('/auth/me', (c) => {
   const user = userFromCookieHeader(c.req.header('cookie'));
-  return c.json({ user, devLogin: env.devLogin });
+  return c.json({ user, devLogin: env.devLogin, capabilities: { desktop: env.desktop !== 'none', apps: !!env.composioKey, voice: !!env.xaiKey } });
 });
 
 api.get('/auth/google/start', async (c) => {
+  if (!env.composioKey) return c.json({ error: 'Google sign-in is disabled. Use local sign-in.' }, 503);
   const attemptId = newId('login');
   const provisional = newId('usr');
   const cb = `${env.serverUrl}/api/auth/google/callback?attempt=${attemptId}`;
@@ -146,6 +147,11 @@ api.post('/auth/logout', (c) => { destroySession(c); return c.json({ ok: true })
 api.use('/*', async (c, next) => {
   if (c.req.path.startsWith('/api/auth/') || c.req.path.startsWith('/api/apps/callback') || c.req.path === '/api/health') return next();
   return requireUser(c, next);
+});
+
+api.use('/apps/*', async (c, next) => {
+  if (!env.composioKey) return c.json({ error: 'Connected apps are disabled. Configure COMPOSIO_API_KEY to enable them.' }, 503);
+  return next();
 });
 
 // ---------- events (SSE) ----------

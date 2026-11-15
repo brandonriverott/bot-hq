@@ -19,12 +19,15 @@ function secret(name: string): string {
 
 const hermesHome = process.env.HERMES_HOME_PRIMARY ?? path.join(os.homedir(), '.hermes');
 const desktop = process.env.HQ_DESKTOP ?? 'orgo';
-if (!['none', 'orgo'].includes(desktop)) throw new Error('HQ_DESKTOP must be none or orgo');
-if (desktop === 'none' && process.env.HQ_LOCAL === '1') throw new Error('HQ_LOCAL=1 requires an Orgo computer');
+if (!['none', 'orgo', 'cua'].includes(desktop)) throw new Error('HQ_DESKTOP must be none, orgo or cua');
+if (desktop !== 'orgo' && process.env.HQ_LOCAL === '1') throw new Error('HQ_LOCAL=1 requires an Orgo computer');
 
 export const env = {
   desktop,
-  hostname: desktop === 'none' ? '127.0.0.1' : undefined,
+  hostname: desktop !== 'orgo' ? '127.0.0.1' : undefined,
+  cuaBin: process.env.CUA_BIN ?? 'cua',
+  cuaSandbox: process.env.CUA_SANDBOX ?? 'bot-hq-desktop',
+  libraryRoot: desktop === 'cua' ? '/home/cua/bot-hq/files' : '/root/grokbot/files',
   port: Number(process.env.PORT ?? 8787),
   appUrl: process.env.APP_URL ?? 'http://localhost:5173',
   /** Public URL of this server, used for OAuth callbacks. */
@@ -32,7 +35,7 @@ export const env = {
   xaiKey: process.env.XAI_API_KEY ?? '',
   xaiModel: process.env.XAI_MODEL ?? 'grok-4.7',
   composioKey: process.env.COMPOSIO_API_KEY ?? '',
-  orgoKey: desktop === 'none' ? '' : secret('ORGO_API_KEY'),
+  orgoKey: desktop !== 'orgo' ? '' : secret('ORGO_API_KEY'),
   sessionSecret: req('SESSION_SECRET'),
   devLogin: process.env.DEV_LOGIN === '1',
   dbPath: process.env.DB_PATH ?? new URL('../../data/grokbot.db', import.meta.url).pathname,
@@ -65,7 +68,7 @@ export const env = {
    */
   primaryCdpUrl: process.env.PRIMARY_CDP_URL ?? '',
   /** Bots that can each have a screen (Orgo allows four screens on one Linux computer). */
-  maxBots: desktop === 'none' ? 1 : Number(process.env.MAX_BOTS ?? 4),
+  maxBots: desktop !== 'orgo' ? 1 : Number(process.env.MAX_BOTS ?? 4),
   /** Comma-separated emails allowed to sign in; empty = anyone who can reach the app. */
   allowedEmails: (process.env.ALLOWED_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean),
 };

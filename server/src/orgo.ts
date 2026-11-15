@@ -9,7 +9,7 @@ export class OrgoError extends Error {
 }
 
 async function call<T = any>(method: string, path: string, body?: unknown, opts: { timeoutMs?: number; headers?: Record<string, string> } = {}): Promise<T> {
-  if (env.desktop === 'none') throw new Error('Desktops are disabled in local mode.');
+  if (env.desktop !== 'orgo') throw new Error('Orgo transport is disabled in local mode.');
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120_000);
   try {

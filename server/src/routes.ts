@@ -17,6 +17,7 @@ import { runRoutine, scheduleRoutine, unscheduleRoutine } from './routines.js';
 import { deleteEventTrigger } from './triggers.js';
 import { dispatchRoomMessage } from './agent/rooms.js';
 import { voiceApi } from './voice.js';
+import { cuaDesktop } from './cua.js';
 import type { AvatarColor, AvatarShape, Toolkit } from './types.js';
 
 export const api = new Hono<AuthVars>();
@@ -37,7 +38,7 @@ const agentCount = () => (db.prepare("SELECT COUNT(*) n FROM bots WHERE COALESCE
 
 function createBot(userId: string, b: { name: string; label?: string; description?: string; instructions?: string; avatarShape?: string; avatarColor?: string; mode?: string; isPrimary?: boolean }) {
   // Every bot needs a screen of its own on the one shared computer.
-  if (agentCount() >= env.maxBots) throw new UserError(env.desktop === 'none' ? 'Local mode supports one existing Hermes agent. Additional bots need an isolated desktop backend.' : `The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
+  if (agentCount() >= env.maxBots) throw new UserError(env.desktop !== 'orgo' ? 'Local mode supports one existing Hermes agent. Additional bots need a separately configured isolated agent.' : `The team is full: the computer has room for ${env.maxBots} bots. Remove one to add another.`);
   const id = newId('bot');
   const shape = SHAPES.includes(b.avatarShape as AvatarShape) ? b.avatarShape : hashPick(id, SHAPES.slice(0, 13));
   const color = COLORS.includes(b.avatarColor as AvatarColor) ? b.avatarColor : hashPick(id, COLORS.filter((c) => c !== 'black'));
@@ -64,7 +65,7 @@ function findOrCreateUser(email: string, name?: string, preferId?: string) {
 
 api.get('/auth/me', (c) => {
   const user = userFromCookieHeader(c.req.header('cookie'));
-  return c.json({ user, devLogin: env.devLogin, capabilities: { desktop: env.desktop !== 'none', apps: !!env.composioKey, voice: !!env.xaiKey } });
+  return c.json({ user, devLogin: env.devLogin, capabilities: { desktop: env.desktop !== 'none', desktopBackend: env.desktop, apps: !!env.composioKey, voice: !!env.xaiKey } });
 });
 
 api.get('/auth/google/start', async (c) => {
@@ -395,6 +396,11 @@ api.get('/bots/:id/screenshot', async (c) => {
   const user = c.get('user');
   const b = ownBot(user.id, c.req.param('id'));
   if (!b) return c.json({ error: 'not found' }, 404);
+  if (env.desktop === 'cua') {
+    if (b.engine !== 'primary') return c.json({ error: 'Only the primary agent has a Cua desktop.' }, 409);
+    try { return c.body(await cuaDesktop.screenshot(), 200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' }); }
+    catch (e) { return c.json({ error: (e as Error).message }, 503); }
+  }
   const scr = db.prepare('SELECT screen_id FROM screens WHERE bot_id=?').get(b.id) as any;
   if (!env.orgoComputerId || computerState(user.id).status !== 'running' || !scr) return c.body(null, 204);
   try {
@@ -407,6 +413,16 @@ api.get('/bots/:id/screenshot', async (c) => {
 });
 
 // ---------- apps (Composio marketplace) ----------
+
+api.post('/bots/:id/cua/viewer', async (c) => {
+  const b = ownBot(c.get('user').id, c.req.param('id'));
+  if (!b) return c.json({ error: 'not found' }, 404);
+  if (env.desktop !== 'cua' || b.engine !== 'primary') return c.json({ error: 'Cua desktop unavailable' }, 409);
+  const body = await c.req.json().catch(() => ({}));
+  if (body.mode !== 'watch' && body.mode !== 'control') return c.json({ error: 'Invalid viewer mode' }, 400);
+  try { c.header('Cache-Control', 'no-store'); return c.json(await cuaDesktop.viewer(body.mode)); }
+  catch (e) { return c.json({ error: (e as Error).message }, 503); }
+});
 
 api.get('/apps', async (c) => {
   const user = c.get('user');

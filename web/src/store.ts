@@ -9,7 +9,7 @@ interface Transcript { generation: number; bySeq: Record<number, Row>; loaded: b
 interface State {
   user: User | null;
   devLogin: boolean;
-  capabilities: { desktop: boolean; apps: boolean; voice: boolean } | null;
+  capabilities: { desktop: boolean; desktopBackend?: 'none' | 'orgo' | 'cua'; apps: boolean; voice: boolean } | null;
   authChecked: boolean;
 
   bots: Bot[];

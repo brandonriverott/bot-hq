@@ -8,12 +8,13 @@ import { computerStatusText, screenSize, screensFull } from '../lib/computer';
 import { configApi } from '../lib/configApi';
 import { useSelectedBot, useStore } from '../store';
 import { Icon } from './Icon';
+import { CuaComputerScreen } from './CuaComputerScreen';
 
 export type ScreenMode = 'watch' | 'control';
 type Conn = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
 type Phase = 'live' | 'switching' | 'waking' | 'asleep' | 'idle' | 'paused' | 'error';
 
-interface ScreenProps {
+export interface ScreenProps {
   bot: Bot;
   /** 'panel' is the small live view in the details panel; 'stage' is the large view. */
   variant: 'panel' | 'stage';
@@ -32,7 +33,12 @@ interface ScreenProps {
  * screen's aspect ratio. Watching is view-only. Taking control reconnects with mode=control and shows
  * a chin under the frame with the way back.
  */
-export function ComputerScreen({ bot, variant, initialMode = 'watch', hint, paused = false, onExpand, onModeChange }: ScreenProps) {
+export function ComputerScreen(props: ScreenProps) {
+  const backend = useStore((s) => s.capabilities?.desktopBackend);
+  return backend === 'cua' ? <CuaComputerScreen {...props} /> : <OrgoComputerScreen {...props} />;
+}
+
+function OrgoComputerScreen({ bot, variant, initialMode = 'watch', hint, paused = false, onExpand, onModeChange }: ScreenProps) {
   const computer = useStore((s) => s.computer);
   const frameRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);

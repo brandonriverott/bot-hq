@@ -30,7 +30,7 @@ expireStaleApprovals();
 const app = new Hono();
 // Local email sign-in must never become a LAN service or accept cross-site writes.
 app.use('/*', async (c, next) => {
-  if (env.desktop === 'none') {
+  if (env.desktop !== 'orgo') {
     const host = c.req.header('host') ?? '';
     if (!/^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host)) return c.json({ error: 'Local access only' }, 403);
     const origin = c.req.header('origin');

@@ -5,6 +5,7 @@ import { orgo, OrgoError, type OrgoScreen } from './orgo.js';
 import { cdpPortFor, dressScreen, resetScreen, undressScreen, type DeskBot } from './desk.js';
 import { box } from './box.js';
 import type { ComputerState } from './types.js';
+import { cuaDesktop } from './cua.js';
 
 /**
  * One Orgo computer for the whole team (ORGO_COMPUTER_ID), one screen per bot. The primary bot's
@@ -41,6 +42,11 @@ function setStatus(userId: string, status: ComputerState['status'], error: strin
 
 export function computerState(userId: string): ComputerState {
   if (env.desktop === 'none') return { status: 'absent', orgoId: null, error: 'Desktop disabled. Chat is available through a configured Hermes gateway.', screens: [], maxScreens: 0 };
+  if (env.desktop === 'cua') {
+    const r = rowFor(userId);
+    const b = db.prepare("SELECT id FROM bots WHERE user_id=? AND engine='primary'").get(userId) as { id: string } | undefined;
+    return { status: r.status, orgoId: null, error: r.error, maxScreens: 1, screens: b && r.status === 'running' ? [{ botId: b.id, screenId: env.cuaSandbox, ...cuaDesktop.dimensions }] : [] };
+  }
   const r = rowFor(userId);
   const screens = (db.prepare('SELECT bot_id, screen_id, width, height FROM screens WHERE user_id=?').all(userId) as any[]).map((s) => ({
     botId: s.bot_id as string,
@@ -76,6 +82,7 @@ let inflight: Promise<string> | null = null;
 
 /** Make sure the shared computer is awake. Returns its Orgo id. */
 export function ensureComputer(userId: string): Promise<string> {
+  if (env.desktop === 'cua') return cuaDesktop.requireRunning().then(() => { setStatus(userId, 'running'); return env.cuaSandbox; });
   const id = computerId();
   if (Date.now() - checkedAt < 30_000) return Promise.resolve(id);
   if (inflight) return inflight;
@@ -215,6 +222,7 @@ export function cdpUrlFor(botId: string, screenId: string): string {
  * answers. Without this a bot's first turn finds no browser and goes off to start one of its own.
  */
 export async function screenForWork(userId: string, botId: string): Promise<void> {
+  if (env.desktop === 'cua') { await ensureComputer(userId); return; }
   if (env.desktop === 'none') return;
   if (!env.orgoComputerId) return;
   if (!managesChrome(botId)) {
@@ -259,6 +267,11 @@ export async function suspendComputer(_userId: string, _reason = 'manual'): Prom
 
 /** Refresh status and screen sizes from Orgo (cheap; used when the UI opens). */
 export async function refreshComputer(userId: string): Promise<ComputerState> {
+  if (env.desktop === 'cua') {
+    try { const info = await cuaDesktop.info(); setStatus(userId, info.running ? 'running' : 'stopped'); }
+    catch (e) { setStatus(userId, 'error', (e as Error).message); }
+    return computerState(userId);
+  }
   if (!env.orgoComputerId) {
     setStatus(userId, 'error', 'ORGO_COMPUTER_ID is not set.');
     return computerState(userId);

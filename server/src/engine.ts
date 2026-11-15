@@ -90,7 +90,7 @@ function freePort(): number {
 export function assignEngine(botId: string): EngineKind {
   const b = botRow(botId);
   if (!b) throw new Error('bot not found');
-  if (env.desktop === 'none' && (b.engine === 'managed' || (b.engine !== 'primary' && primaryBotId()))) throw new Error('Managed agents are disabled in local mode.');
+  if (env.desktop !== 'orgo' && (b.engine === 'managed' || (b.engine !== 'primary' && primaryBotId()))) throw new Error('Managed agents are disabled in local mode.');
   if (b.engine === 'primary' || b.engine === 'managed') return b.engine;
   if (!primaryBotId()) {
     db.prepare("UPDATE bots SET engine='primary', engine_port=NULL WHERE id=?").run(botId);
@@ -125,7 +125,7 @@ function soul(b: any): string {
 
 /** Rewrite the persona file after a rename or a new description. The primary agent keeps its own. */
 export function syncPersona(botId: string) {
-  if (env.desktop === 'none') return;
+  if (env.desktop !== 'orgo') return;
   const b = botRow(botId);
   if (!b || b.engine !== 'managed') return;
   const home = homeFor(botId);
@@ -336,7 +336,7 @@ async function startGateway(botId: string): Promise<void> {
 
 /** Start (or adopt) the bot's gateway. Safe to call often; concurrent calls share one start. */
 function ensureManaged(botId: string): Promise<void> {
-  if (env.desktop === 'none') return Promise.reject(new Error('Managed agents are disabled in local mode.'));
+  if (env.desktop !== 'orgo') return Promise.reject(new Error('Managed agents are disabled in local mode.'));
   let p = starting.get(botId);
   if (!p) {
     p = startGateway(botId)
@@ -363,7 +363,7 @@ export async function engineFor(botId: string): Promise<Engine> {
     kind = assignEngine(botId);
   }
   if (kind === 'primary') return { kind, url: env.hermesUrl, key: primaryKey(), home: env.hermesHome };
-  if (env.desktop === 'none') throw new Error('Managed agents are disabled in local mode.');
+  if (env.desktop !== 'orgo') throw new Error('Managed agents are disabled in local mode.');
   const url = managedUrl(botId);
   if (!(await healthy(url, 1500)) || !managedKey(botId)) await ensureManaged(botId);
   return { kind, url, key: managedKey(botId), home: homeFor(botId) };
@@ -372,7 +372,7 @@ export async function engineFor(botId: string): Promise<Engine> {
 /** The bot's Hermes home, without starting anything (memory files, sign-in commands). */
 export function engineHome(botId: string): string | null {
   const kind = engineKind(botId);
-  if (env.desktop === 'none' && kind !== 'primary') return null;
+  if (env.desktop !== 'orgo' && kind !== 'primary') return null;
   return kind === 'primary' ? env.hermesHome : kind === 'managed' ? homeFor(botId) : null;
 }
 
@@ -399,7 +399,7 @@ export function ownScreenOn(botId: string): boolean {
 
 /** Ask Hermes to stop that private screen. Hermes refuses while a person is using it; the refusal is passed on. */
 export function stopOwnScreen(botId: string): Promise<void> {
-  if (env.desktop === 'none') return Promise.reject(new Error('Desktop controls are disabled in local mode.'));
+  if (env.desktop !== 'orgo') return Promise.reject(new Error('Desktop controls are disabled in local mode.'));
   const home = engineHome(botId);
   if (!home) return Promise.reject(new Error('This bot has no agent.'));
   return new Promise((resolve, reject) => {
@@ -413,12 +413,12 @@ export function stopOwnScreen(botId: string): Promise<void> {
 
 /** Start the gateway in the background (after creating a bot, or on server start). */
 export function provisionEngine(botId: string) {
-  if (env.desktop === 'none') return;
+  if (env.desktop !== 'orgo') return;
   if (engineKind(botId) === 'managed') ensureManaged(botId).catch(() => {});
 }
 
 export async function restartEngine(botId: string): Promise<void> {
-  if (env.desktop === 'none') throw new Error('Managed agents are disabled in local mode.');
+  if (env.desktop !== 'orgo') throw new Error('Managed agents are disabled in local mode.');
   if (engineKind(botId) !== 'managed') return;
   await starting.get(botId)?.catch(() => {});
   await stopGateway(botId);
@@ -428,7 +428,7 @@ export async function restartEngine(botId: string): Promise<void> {
 
 /** The bot is gone: stop its gateway and delete its home. The primary agent is left alone. */
 export async function removeEngine(botId: string): Promise<void> {
-  if (env.desktop === 'none') return;
+  if (env.desktop !== 'orgo') return;
   const home = homeFor(botId);
   if (!fs.existsSync(home)) return;
   await starting.get(botId)?.catch(() => {});
@@ -441,7 +441,7 @@ export async function removeEngine(botId: string): Promise<void> {
 
 /** On server start: give older bots an engine, then bring the managed gateways up. */
 export function initEngines() {
-  if (env.desktop === 'none') return;
+  if (env.desktop !== 'orgo') return;
   fs.mkdirSync(env.enginesDir, { recursive: true });
   const bots = db.prepare("SELECT id, is_primary FROM bots WHERE engine IS NULL AND COALESCE(kind,'agent') <> 'room' AND COALESCE(hidden,0)=0 ORDER BY is_primary DESC, created_at ASC").all() as any[];
   for (const b of bots) assignEngine(b.id);
@@ -492,7 +492,7 @@ export async function engineInfo(botId: string): Promise<EngineInfo> {
   const kind = engineKind(botId);
   const base: EngineInfo = { botId, profile: kind === 'primary' ? 'default' : botId, status: 'stopped', error: null, model: b.model ?? null, provider: b.provider ?? null, version: null, providers: [], ownScreen: kind ? ownScreenOn(botId) : false };
   if (!kind) return { ...base, status: 'error', error: 'This bot has no agent.' };
-  if (env.desktop === 'none' && kind === 'managed') return { ...base, status: 'error', error: 'Managed agents are disabled in local mode.' };
+  if (env.desktop !== 'orgo' && kind === 'managed') return { ...base, status: 'error', error: 'Managed agents are disabled in local mode.' };
 
   let e: { url: string; key: string };
   if (kind === 'primary') e = { url: env.hermesUrl, key: primaryKey() };

@@ -7,6 +7,7 @@ import { requireUser, type AuthVars } from './lib/auth.js';
 import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { env } from './env.js';
+import { cuaDesktop } from './cua.js';
 import { emitBot, getBotRow, listRoutines, listTasks } from './store.js';
 import { computerState, readyScreen, resetBotScreen } from './computer.js';
 import { box } from './box.js';
@@ -198,7 +199,7 @@ configApi.post('/bots/:id/handback', (c) => {
 
 // ---------- library: files under /root/grokbot/files/<botId> on the bot's computer ----------
 
-const LIB_ROOT = '/root/grokbot/files';
+const LIB_ROOT = env.libraryRoot;
 
 function safeRel(p: string | undefined): string | null {
   const rel = (p ?? '').replace(/^\/+|\/+$/g, '');
@@ -230,6 +231,10 @@ configApi.get('/bots/:id/files', async (c) => {
   const rel = safeRel(c.req.query('path'));
   if (rel === null) return c.json({ error: 'bad path' }, 400);
   try {
+    if (env.desktop === 'cua') {
+      if (b.engine !== 'primary') return c.json({ error: 'not found' }, 404);
+      return c.json({ status: 'ok', path: rel, files: await cuaDesktop.listLibrary(b.id, rel) });
+    }
     if (!box.local && computerState(user.id).status !== 'running') return c.json({ status: 'asleep', path: rel, files: [] });
     const dir = `${LIB_ROOT}/${b.id}${rel ? `/${rel}` : ''}`;
     const r = await box.bash(`mkdir -p ${shq(`${LIB_ROOT}/${b.id}`)} && ls -la --time-style=+%s ${shq(dir)} 2>&1`, 30);
@@ -248,7 +253,7 @@ configApi.post('/bots/:id/files/download', async (c) => {
   const rel = safeRel(path);
   if (!rel) return c.json({ error: 'bad path' }, 400);
   // On the computer itself the file is on our own disk: serve it directly.
-  if (box.local) return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
+  if (box.local || env.desktop === 'cua') return c.json({ url: `/api/bots/${b.id}/files/raw?path=${encodeURIComponent(rel)}` });
   try {
     if (!env.orgoComputerId) return c.json({ error: 'computer unavailable' }, 409);
     const r: any = await orgo.exportFile(env.orgoComputerId, `${LIB_ROOT}/${b.id}/${rel}`);
@@ -260,12 +265,19 @@ configApi.post('/bots/:id/files/download', async (c) => {
   }
 });
 
-configApi.get('/bots/:id/files/raw', (c) => {
+configApi.get('/bots/:id/files/raw', async (c) => {
   const b = ownBot(c.get('user').id, c.req.param('id'));
-  if (!b || !box.local) return c.json({ error: 'not found' }, 404);
+  if (!b || (!box.local && env.desktop !== 'cua')) return c.json({ error: 'not found' }, 404);
   const rel = safeRel(c.req.query('path'));
   if (!rel) return c.json({ error: 'bad path' }, 400);
   const root = `${LIB_ROOT}/${b.id}`;
+  if (env.desktop === 'cua') {
+    if (b.engine !== 'primary') return c.json({ error: 'not found' }, 404);
+    try {
+      const data = await cuaDesktop.readLibraryFile(b.id, rel);
+      return c.body(data, 200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(rel.split('/').pop()!)}`, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-store' });
+    } catch { return c.json({ error: 'File unavailable or exceeds 8 MiB.' }, 404); }
+  }
   let file: string;
   try {
     // Follow links before checking, so a link inside the library cannot point outside it.
